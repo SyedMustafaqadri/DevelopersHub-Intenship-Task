@@ -5,6 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "chainlit>=2.11.1",
+    "dotenv>=0.9.9",
+    "langchain>=1.3.10",
+    "langchain-google-genai>=4.2.5",
+    "langgraph>=1.2.6",
     "matplotlib>=3.11.0",
     "numpy>=2.4.6",
     "pandas>=3.0.3",
