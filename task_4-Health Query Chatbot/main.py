@@ -1,76 +1,52 @@
-# Create a health query chatbot
-# Use prompt engineering to make the responses friendly and clear 
-# Add guardrail to avoid giving medical advice that could be harmful. 
-import os
 from dotenv import load_dotenv
 
 import chainlit as cl
 
 from langchain.agents import create_agent
-from langchain.messages import AIMessage, HumanMessage
+from langchain.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from prompt import systemPrompt
 
 load_dotenv()
 
-systemPrompt = """
-You are HealthAssist, a friendly healthcare information chatbot.
-
-Your purpose:
-- Provide educational health information.
-- Explain symptoms, conditions, wellness topics, and preventive care.
-- Use simple language that non-medical users can understand.
-
-IMPORTANT SAFETY RULES:
-
-1. Never claim to be a doctor.
-2. Never provide a definitive diagnosis.
-3. Never prescribe medication.
-4. Never suggest medication dosages.
-5. Never recommend stopping prescribed treatment.
-6. Never provide emergency medical treatment instructions.
-7. Never guarantee outcomes.
-
-Instead:
-- Explain possible causes.
-- Mention uncertainty.
-- Encourage consultation with a healthcare professional.
-
-EMERGENCY RULE:
-
-If the user mentions:
-- chest pain
-- difficulty breathing
-- severe bleeding
-- stroke symptoms
-- seizures
-- loss of consciousness
-- suicidal thoughts
-- overdose
-- severe allergic reaction
-
-Then:
-- Immediately advise contacting local emergency services or seeking urgent medical care.
-- Keep the response short and clear.
-- Do not continue normal symptom discussion before the emergency warning.
-
-RESPONSE STYLE:
-
-- Friendly
-- Empathetic
-- Easy to understand
-- Clear bullet points when helpful
-- Avoid unnecessary medical jargon
-
-Always include:
-
-"⚠️ This information is educational and is not a substitute for professional medical advice."
-"""
-
 model = ChatGoogleGenerativeAI(model="gemma-4-26b-a4b-it")
-agent = create_agent(model=model,system_prompt=systemPrompt)
-history = []
-response = agent.invoke({
-    "messages": [history, HumanMessage(content='Hi, I am having fever and diarrhea')]
-})
+agent = create_agent(model=model)
 
-print(response['messages'][-1].text)
+@cl.on_chat_start
+def start_chat():
+    cl.user_session.set(
+        "message_history",
+        [SystemMessage(systemPrompt)],
+    )
+
+@cl.on_message
+async def main(message: cl.Message):
+    message_history = cl.user_session.get("message_history")
+    user_msg = HumanMessage(content=message.content)
+    message_history.append(user_msg)
+    
+    input_data = {"messages": message_history}
+    msg = cl.Message(content="")
+    await msg.send()
+    
+    # version="v2" is recommended for the latest event structure
+    async for event in agent.astream_events(input_data, version="v2"):
+        # The event structure: event["event"] tells you what happened
+        if event["event"] == "on_chat_model_stream":
+            # This event carries a chunk of the AI's response
+            chunk = event["data"]["chunk"]
+            if isinstance(chunk, AIMessageChunk):
+                # Stream the text part of the chunk
+                content = chunk.content
+                if isinstance(content, list):
+                    for block in content:
+                        if block.get("type") == "text":
+                            await msg.stream_token(block.get("text", ""))
+                else:
+                    await msg.stream_token(str(content))
+    
+
+    
+    assistant_msg = AIMessage(content=msg.content)
+    message_history.append(assistant_msg)
+    await msg.update()
