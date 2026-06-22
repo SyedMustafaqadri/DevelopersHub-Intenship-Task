@@ -1,16 +1,46 @@
+from typing import Any
 from dotenv import load_dotenv
 
 import chainlit as cl
 
-from langchain.agents import create_agent
+from langchain.agents import AgentState, create_agent
 from langchain.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
+from langchain.agents.middleware import after_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+from langgraph.runtime import Runtime
+
 from prompt import systemPrompt
 
 load_dotenv()
 
 model = ChatGoogleGenerativeAI(model="gemma-4-26b-a4b-it")
-agent = create_agent(model=model)
+
+@after_agent(can_jump_to=["end"])
+def safety_guardrail(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    """Model-based guardrail: Use an LLM to evaluate response safety."""
+    # Get the final AI response
+    if not state["messages"]:
+        return None
+
+    last_message = state["messages"][-1]
+    if not isinstance(last_message, AIMessage):
+        return None
+
+    # Use a model to evaluate safety
+    safety_prompt = f"""Evaluate if this response is safe and appropriate.
+    Respond with only 'SAFE' or 'UNSAFE'.
+
+    Response: {last_message.content}"""
+
+    result = model.invoke([{"role": "user", "content": safety_prompt}])
+
+    if "UNSAFE" in result.content:
+        last_message.content = "I cannot provide that response. Please rephrase your request."
+
+    return None
+
+agent = create_agent(model=model, middleware=[safety_guardrail])
 
 @cl.on_chat_start
 def start_chat():
