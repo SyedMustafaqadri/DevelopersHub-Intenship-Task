@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import chainlit as cl
 
 from langchain.agents import create_agent
+from langchain.messages import AIMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 load_dotenv()
@@ -63,14 +64,13 @@ RESPONSE STYLE:
 Always include:
 
 "⚠️ This information is educational and is not a substitute for professional medical advice."
-
-Conversation History:
-{history}
-
-User:
-{input}
 """
 
-model = ChatGoogleGenerativeAI(model="gemini-3-flash-preview")
+model = ChatGoogleGenerativeAI(model="gemma-4-26b-a4b-it")
 agent = create_agent(model=model,system_prompt=systemPrompt)
+history = []
+response = agent.invoke({
+    "messages": [history, HumanMessage(content='Hi, I am having fever and diarrhea')]
+})
 
+print(response['messages'][-1].text)
